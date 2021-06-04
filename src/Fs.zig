@@ -12,7 +12,7 @@ const CompressionType = @import("dataset_attributes.zig").CompressionType;
 const json_file = "attributes.json";
 
 /// interacts with N5 on a local filesystem.
-const Fs = @This();
+pub const Fs = @This();
 
 allocator: *Allocator,
 basePath: []const u8,

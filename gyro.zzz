@@ -1,0 +1,11 @@
+pkgs:
+  iguaN5:
+    version: 0.0.0
+    description: "ZIG library to interact with the N5 format"
+    license: MIT
+    source_url: "https://github.com/kind84/iguan5"
+
+    root: src/main.zig
+    files:
+      README.md
+      LICENSE

@@ -1,9 +1,13 @@
 const std = @import("std");
 const fmt = std.fmt;
 const fs = std.fs;
+const heap = std.heap;
 const json = std.json;
 const mem = std.mem;
 const meta = std.meta;
+const os = std.os;
+const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 const Allocator = mem.Allocator;
 
 pub const DatasetAttributes = struct {
@@ -141,7 +145,7 @@ pub const DatasetAttributes = struct {
 
         // json.parse does not allow to have optional fields for now
         //
-        // var d_attr = try json.parse(DatasetAttributes, &stream, .{ .allocator = allocator });
+        // var d_attr = try json.parse(DatasetAttributes, &stream, .{ .allocator = allocator, .ignore_unknown_fields = true });
         // defer json.parseFree(DatasetAttributes, d_attr, .{ .allocator = allocator });
 
         return DatasetAttributes{
@@ -193,3 +197,28 @@ pub const DataType = enum {
     float64,
     object,
 };
+
+test "init" {
+    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    var allocator = &gpa.allocator;
+    var path_buffer: [os.PATH_MAX]u8 = undefined;
+    var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0/attributes.json", &path_buffer);
+
+    var da = try DatasetAttributes.init(allocator, full_path);
+
+    try expect(da.dataType == DataType.uint8);
+    var expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
+    for (expected_dim) |dim, i| {
+        try expect(da.dimensions[i] == dim);
+    }
+    var expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
+    for (expected_block_size) |block, i| {
+        try expect(da.blockSize[i] == block);
+    }
+    try expect(da.compression.type == CompressionType.raw);
+    try expect(da.compression.useZlib == false);
+    try expect(da.compression.blockSize == 0);
+    try expect(da.compression.level == 0);
+    da.deinit();
+    try expect(!gpa.deinit());
+}

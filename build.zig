@@ -10,7 +10,7 @@ pub fn build(b: *std.build.Builder) void {
     lib.linkLibC();
     lib.install();
 
-    var main_tests = b.addTest("src/main.zig");
+    var main_tests = b.addTest("iguan5.zig");
     main_tests.setBuildMode(mode);
 
     const test_step = b.step("test", "Run library tests");

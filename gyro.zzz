@@ -5,7 +5,7 @@ pkgs:
     license: MIT
     source_url: "https://github.com/kind84/iguan5"
 
-    root: src/main.zig
+    root: iguan5.zig
     files:
       README.md
       LICENSE

@@ -10,6 +10,6 @@ pkgs:
       README.md
       LICENSE
 
-  LZ4Builder:
+  IguaN5Builder:
     version: 0.0.0         
     root: src/builder.zig

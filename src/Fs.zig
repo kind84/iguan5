@@ -17,12 +17,13 @@ allocator: *Allocator,
 basePath: []const u8,
 
 pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
-    var dir = try std.fs.openDirAbsolute(basePath, .{});
+    var data_path = try path.join(allocator, &.{ basePath, "data.n5" });
+    var dir = try std.fs.openDirAbsolute(data_path, .{});
     defer dir.close();
 
     return Fs{
         .allocator = allocator,
-        .basePath = basePath,
+        .basePath = data_path,
     };
 }
 
@@ -61,7 +62,7 @@ test "lz4" {
     const allocator = &gpa.allocator;
 
     var path_buffer: [std.os.PATH_MAX]u8 = undefined;
-    var full_path = try std.fs.realpath("testdata", &path_buffer);
+    var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
 
     var grid_position = [_]i64{ 0, 0, 0, 0, 0 };

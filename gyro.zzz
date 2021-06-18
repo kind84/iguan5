@@ -9,3 +9,7 @@ pkgs:
     files:
       README.md
       LICENSE
+
+  LZ4Builder:
+    version: 0.0.0         
+    root: src/builder.zig

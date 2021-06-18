@@ -1,7 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
-const fs = std.fs;
-const path = fs.path;
+const path = std.fs.path;
 const Allocator = std.mem.Allocator;
 const Datablock = @import("datablock.zig").Datablock;
 const DatasetAttributes = @import("dataset_attributes.zig").DatasetAttributes;
@@ -18,7 +17,7 @@ allocator: *Allocator,
 basePath: []const u8,
 
 pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
-    var dir = try fs.openDirAbsolute(basePath, .{});
+    var dir = try std.fs.openDirAbsolute(basePath, .{});
     defer dir.close();
 
     return Fs{
@@ -28,12 +27,12 @@ pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
 }
 
 /// returns the datablock at the provided coordinates.
-pub fn getBlock(self: *Fs, datasetPath: []const u8, attributes: DatasetAttributes, gridPosition: []i64) !Datablock(fs.File) {
+pub fn getBlock(self: *Fs, datasetPath: []const u8, attributes: DatasetAttributes, gridPosition: []i64) !Datablock(std.fs.File) {
     var dataset_path = try self.datablockPath(datasetPath, gridPosition);
     defer self.allocator.free(dataset_path);
-    var fd = try fs.openFileAbsolute(dataset_path, .{});
+    var fd = try std.fs.openFileAbsolute(dataset_path, .{});
 
-    return Datablock(fs.File).init(self.allocator, fd, attributes, gridPosition);
+    return Datablock(std.fs.File).init(self.allocator, fd, attributes, gridPosition);
 }
 
 /// returns the attributes for the provided dataset path.
@@ -55,4 +54,26 @@ fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 
     }
 
     return full_path;
+}
+
+test "lz4" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = &gpa.allocator;
+
+    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    var full_path = try std.fs.realpath("testdata", &path_buffer);
+    var fs = try Fs.init(allocator, full_path);
+
+    var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
+
+    var attr = try fs.datasetAttributes("0/0");
+    defer attr.deinit();
+    std.debug.print("{}\n", .{attr});
+    var d_block = try fs.getBlock("0/0", attr, &grid_position);
+    defer d_block.deinit();
+    var out = std.io.getStdOut();
+    var buf = try allocator.alloc(u8, d_block.len);
+    var n = try d_block.reader().read(buf);
+    defer allocator.free(buf);
+    try out.writeAll(buf);
 }

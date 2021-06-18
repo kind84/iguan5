@@ -221,6 +221,6 @@ test "totalElements" {
     for (tests) |t| {
         var n = totalElements(t.dimensions);
 
-        std.testing.expect(n == t.expected);
+        try std.testing.expect(n == t.expected);
     }
 }

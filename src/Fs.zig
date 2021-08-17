@@ -98,7 +98,7 @@ test "lz4" {
     var out = std.io.getStdOut();
     var buf = try allocator.alloc(u8, d_block.len);
     errdefer allocator.free(buf);
-    var n = try d_block.reader().read(buf);
+    _ = try d_block.reader().read(buf);
     try out.writeAll(buf);
 
     allocator.free(buf);

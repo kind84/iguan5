@@ -53,14 +53,12 @@ fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 
     var full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
     defer self.allocator.free(full_path);
     for (gridPosition) |gp| {
-        var buf = try self.allocator.alloc(u8, 4096);
-        errdefer self.allocator.free(buf);
-        const gp_str = try fmt.bufPrint(buf, "{d}", .{gp});
+        const gp_str = try fmt.allocPrint(self.allocator, "{d}", .{gp});
+        defer self.allocator.free(gp_str);
         var temp_path = try path.join(self.allocator, &.{ full_path, gp_str });
         defer self.allocator.free(temp_path);
         full_path = try self.allocator.resize(full_path, temp_path.len);
         std.mem.copy(u8, full_path, temp_path);
-        self.allocator.free(buf);
     }
 
     var final_path = try self.allocator.alloc(u8, full_path.len);

@@ -1,7 +1,9 @@
 const std = @import("std");
+const fmt = std.fmt;
 const fs = std.fs;
 const io = std.io;
 const os = std.os;
+const path = std.fs.path;
 const Allocator = std.mem.Allocator;
 const gzip = std.compress.gzip;
 const DatasetAttributes = @import("dataset_attributes.zig").DatasetAttributes;
@@ -11,20 +13,12 @@ const c = @cImport({
     @cInclude("lz4.h");
 });
 
-const chunkInfo = struct {
-    blockSize: []u32,
-    elementsNo: u32,
-};
-
-pub fn datablock(reader: anytype) !Datablock(@TypeOf(reader)) {
-    return Datablock(@TypeOf(reader));
-}
-
 pub fn Datablock(comptime ReaderType: type) type {
     return struct {
         allocator: *Allocator,
         source: ReaderType,
-        attributes: DatasetAttributes,
+        attributes: ?DatasetAttributes,
+        datasetPath: []const u8,
         size: []u32,
         elementsNo: u32,
         gridPosition: []i64,
@@ -32,98 +26,108 @@ pub fn Datablock(comptime ReaderType: type) type {
 
         const Self = @This();
 
-        pub fn init(a: *Allocator, source: ReaderType, attributes: DatasetAttributes, gridPosition: []i64) !Self {
+        pub fn init(
+            a: *Allocator,
+            source: ReaderType,
+            datasetPath: []const u8,
+            gridPosition: []i64,
+        ) !Self {
             var d_block = Self{
                 .allocator = a,
                 .source = source,
-                .attributes = attributes,
+                .attributes = null,
+                .datasetPath = datasetPath,
                 .gridPosition = gridPosition,
                 .size = undefined,
                 .elementsNo = undefined,
                 .len = 0,
             };
-            var info = try d_block.initChunk();
-            var len: u32 = 1;
-            for (info.blockSize) |dim_size| {
-                if (dim_size > 0) {
-                    len *= dim_size;
-                }
-            }
-            d_block.len = @intCast(usize, len);
-            d_block.elementsNo = info.elementsNo;
-            d_block.size = info.blockSize;
+            try d_block.initChunk();
             return d_block;
         }
 
         pub fn deinit(self: *Self) void {
             self.source.close();
             self.allocator.free(self.size);
+            if (self.attributes) |*attr| {
+                attr.*.deinit();
+            }
         }
 
         pub const Reader = io.Reader(*Self, anyerror, read);
 
         pub fn read(self: *Self, buffer: []u8) !usize {
-            switch (self.attributes.compression.type) {
-                CompressionType.raw => {
-                    return self.source.read(buffer);
-                },
-                CompressionType.gzip => {
-                    var gzip_reader = try gzip.gzipStream(self.allocator, self.source.reader());
-                    return gzip_reader.read(buffer);
-                },
-                CompressionType.bzip2 => unreachable,
-                CompressionType.blosc => unreachable,
-                CompressionType.lz4 => {
-                    var current_byte: usize = 0;
-                    var decompressed: c_int = 0;
+            if (self.attributes) |attr| {
+                switch (attr.compression.type) {
+                    CompressionType.raw => {
+                        return self.source.read(buffer);
+                    },
+                    CompressionType.gzip => {
+                        var gzip_reader = try gzip.gzipStream(self.allocator, self.source.reader());
+                        return gzip_reader.read(buffer);
+                    },
+                    CompressionType.bzip2 => unreachable,
+                    CompressionType.blosc => unreachable,
+                    CompressionType.lz4 => {
+                        var current_byte: usize = 0;
+                        var decompressed: c_int = 0;
 
-                    while (true) {
-                        // each lz4 block is preceeded by
-                        // 'Lz4Block' (8 bytes) + 1 byte token
-                        var s = self.seeker();
-                        try s.seekBy(9);
+                        while (true) {
+                            // each lz4 block is preceeded by
+                            // 'Lz4Block' (8 bytes) + 1 byte token
+                            var s = self.seeker();
+                            try s.seekBy(9);
 
-                        var r = self.source.reader();
+                            var r = self.source.reader();
 
-                        // compressedLength(4 bytes)
-                        // decompressedLength(4 bytes)
-                        // checksum 4 bytes
-                        var comp_size = try r.readIntLittle(i32);
-                        var decomp_size = try r.readIntLittle(i32);
-                        // var checksum = try r.readIntLittle(i32);
-                        try s.seekBy(4);
-                        if (decomp_size == 0) {
-                            break;
+                            // compressedLength(4 bytes)
+                            // decompressedLength(4 bytes)
+                            // checksum 4 bytes
+                            var comp_size = try r.readIntLittle(i32);
+                            var decomp_size = try r.readIntLittle(i32);
+                            // var checksum = try r.readIntLittle(i32);
+                            try s.seekBy(4);
+                            if (decomp_size == 0) {
+                                break;
+                            }
+
+                            var comp_buf = try self.allocator.alloc(u8, @intCast(usize, comp_size));
+                            defer self.allocator.free(comp_buf);
+                            _ = try r.read(comp_buf);
+
+                            var res = c.LZ4_decompress_safe(
+                                comp_buf.ptr,
+                                buffer.ptr + current_byte,
+                                @intCast(c_int, comp_size),
+                                @intCast(c_int, decomp_size),
+                            );
+
+                            if (res < 0) {
+                                return error.LZ4DecompressionError;
+                            }
+                            decompressed += res;
+                            current_byte += @intCast(usize, decomp_size);
                         }
-
-                        var comp_buf = try self.allocator.alloc(u8, @intCast(usize, comp_size));
-                        defer self.allocator.free(comp_buf);
-                        _ = try r.read(comp_buf);
-
-                        var res = c.LZ4_decompress_safe(
-                            comp_buf.ptr,
-                            buffer.ptr + current_byte,
-                            @intCast(c_int, comp_size),
-                            @intCast(c_int, decomp_size),
-                        );
-
-                        if (res < 0) {
-                            return error.LZ4DecompressionError;
-                        }
-                        decompressed += res;
-                        current_byte += @intCast(usize, decomp_size);
-                    }
-                    return @intCast(usize, decompressed);
-                },
-                CompressionType.xz => unreachable,
-            }
+                        return @intCast(usize, decompressed);
+                    },
+                    CompressionType.xz => unreachable,
+                }
+            } else return @as(usize, 0);
         }
 
         pub fn reader(self: *Self) Reader {
             return .{ .context = self };
         }
 
-        pub const SeekableStream = io.SeekableStream(*Self, anyerror, anyerror, seekTo, seekBy, getPos, getEndPos);
+        pub const SeekableStream = io.SeekableStream(
+            *Self,
+            anyerror,
+            anyerror,
+            seekTo,
+            seekBy,
+            getPos,
+            getEndPos,
+        );
 
         pub fn seekTo(self: *Self, offset: u64) !void {
             return self.source.seekTo(offset);
@@ -145,9 +149,11 @@ pub fn Datablock(comptime ReaderType: type) type {
             return .{ .context = self };
         }
 
-        fn initChunk(self: *Self) !chunkInfo {
+        fn initChunk(self: *Self) !void {
+            self.attributes = try DatasetAttributes.init(self.allocator, self.datasetPath);
             var r = self.source.reader();
-            var mode = try r.readIntBig(u16);
+            // fail silently in case the source is to be written.
+            var mode = r.readIntBig(u16) catch return;
             var block_size: []u32 = undefined;
             var elements_no: u32 = undefined;
 
@@ -184,10 +190,16 @@ pub fn Datablock(comptime ReaderType: type) type {
                 elements_no = try r.readIntBig(u32);
             }
 
-            return chunkInfo{
-                .blockSize = block_size,
-                .elementsNo = elements_no,
-            };
+            var len: u32 = 1;
+            for (block_size) |dim_size| {
+                if (dim_size > 0) {
+                    len *= dim_size;
+                }
+            }
+
+            self.len = @intCast(usize, len);
+            self.elementsNo = elements_no;
+            self.size = block_size;
         }
     };
 }

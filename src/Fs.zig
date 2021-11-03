@@ -1,5 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
+const io = std.io;
 const path = std.fs.path;
 const Allocator = std.mem.Allocator;
 const Datablock = @import("datablock.zig").Datablock;
@@ -7,8 +8,6 @@ const DatasetAttributes = @import("dataset_attributes.zig").DatasetAttributes;
 const DataType = @import("dataset_attributes.zig").DataType;
 const Compression = @import("dataset_attributes.zig").Compression;
 const CompressionType = @import("dataset_attributes.zig").CompressionType;
-
-const json_file = "attributes.json";
 
 /// interacts with N5 on a local filesystem.
 pub const Fs = @This();
@@ -19,6 +18,8 @@ basePath: []const u8,
 pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
     var data_path = try path.join(allocator, &.{ basePath, "data.n5" });
     errdefer allocator.free(data_path);
+    // TODO: catch error here and if dir does not exist, create it.
+    // It can be the case if the Fs in used for writing.
     var dir = try std.fs.openDirAbsolute(data_path, .{});
     defer dir.close();
 
@@ -32,25 +33,37 @@ pub fn deinit(self: *Fs) void {
     self.allocator.free(self.basePath);
 }
 
-/// returns the datablock at the provided coordinates.
-pub fn getBlock(self: *Fs, datasetPath: []const u8, attributes: DatasetAttributes, gridPosition: []i64) !Datablock(std.fs.File) {
-    var dataset_path = try self.datablockPath(datasetPath, gridPosition);
-    defer self.allocator.free(dataset_path);
-    var fd = try std.fs.openFileAbsolute(dataset_path, .{});
+// implement the writer interface
+pub const Writer = io.Writer(*Fs, anyerror, write);
 
-    return Datablock(std.fs.File).init(self.allocator, fd, attributes, gridPosition);
+pub fn write(self: *Fs, bytes: []const u8) !usize {
+    _ = self;
+    _ = bytes;
+    return 0;
 }
 
-/// returns the attributes for the provided dataset path.
-pub fn datasetAttributes(self: *Fs, datasetPath: []const u8) !DatasetAttributes {
-    var full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath, json_file });
-    defer self.allocator.free(full_path);
+pub fn writer(self: *Fs) Writer {
+    return .{ .context = self };
+}
 
-    return DatasetAttributes.init(self.allocator, full_path);
+/// returns the datablock at the provided coordinates.
+pub fn getBlock(
+    self: *Fs,
+    datasetPath: []const u8,
+    gridPosition: []i64,
+) !Datablock(std.fs.File) {
+    var dataset_full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
+    defer self.allocator.free(dataset_full_path);
+    var datablock_path = try self.datablockPath(dataset_full_path, gridPosition);
+    defer self.allocator.free(datablock_path);
+    // TODO: catch the error and create the file for the writer.
+    var fd = try std.fs.openFileAbsolute(datablock_path, .{});
+
+    return Datablock(std.fs.File).init(self.allocator, fd, dataset_full_path, gridPosition);
 }
 
 fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 {
-    var full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
+    var full_path = try path.resolve(self.allocator, &.{datasetPath});
     defer self.allocator.free(full_path);
     for (gridPosition) |gp| {
         const gp_str = try fmt.allocPrint(self.allocator, "{d}", .{gp});
@@ -89,19 +102,17 @@ test "lz4" {
 
     var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
 
-    var attr = try fs.datasetAttributes("0/0");
-    errdefer attr.deinit();
-    var d_block = try fs.getBlock("0/0", attr, &grid_position);
+    var d_block = try fs.getBlock("0/0", &grid_position);
     errdefer d_block.deinit();
     var out = std.io.getStdOut();
     var buf = try allocator.alloc(u8, d_block.len);
     errdefer allocator.free(buf);
     _ = try d_block.reader().read(buf);
     try out.writeAll(buf);
+    std.debug.print("\n", .{});
 
     allocator.free(buf);
     d_block.deinit();
-    attr.deinit();
     fs.deinit();
     try std.testing.expect(!gpa.deinit());
 }

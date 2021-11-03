@@ -6,9 +6,12 @@ const json = std.json;
 const mem = std.mem;
 const meta = std.meta;
 const os = std.os;
+const path = std.fs.path;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const Allocator = mem.Allocator;
+
+const json_file = "attributes.json";
 
 pub const DatasetAttributes = struct {
     allocator: *Allocator,
@@ -17,8 +20,11 @@ pub const DatasetAttributes = struct {
     dataType: DataType,
     compression: Compression,
 
-    pub fn init(allocator: *Allocator, path: []const u8) !DatasetAttributes {
-        var attr_fd = try fs.openFileAbsolute(path, .{});
+    pub fn init(allocator: *Allocator, attr_path: []const u8) !DatasetAttributes {
+        var full_path = try path.join(allocator, &.{ attr_path, json_file });
+        defer allocator.free(full_path);
+
+        var attr_fd = try fs.openFileAbsolute(full_path, .{});
         defer attr_fd.close();
         var max_size = try attr_fd.getEndPos();
         const str = try attr_fd.readToEndAlloc(allocator, max_size);
@@ -202,7 +208,7 @@ test "init" {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
     var allocator = &gpa.allocator;
     var path_buffer: [os.PATH_MAX]u8 = undefined;
-    var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0/attributes.json", &path_buffer);
+    var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
 
     var da = try DatasetAttributes.init(allocator, full_path);
 

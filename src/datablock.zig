@@ -17,7 +17,7 @@ pub fn Datablock(comptime ReaderType: type) type {
     return struct {
         allocator: *Allocator,
         source: ReaderType,
-        attributes: ?DatasetAttributes,
+        attributes: ?DatasetAttributes(ReaderType),
         datasetPath: []const u8,
         size: []u32,
         elementsNo: u32,
@@ -150,7 +150,7 @@ pub fn Datablock(comptime ReaderType: type) type {
         }
 
         fn initChunk(self: *Self) !void {
-            self.attributes = try DatasetAttributes.init(self.allocator, self.datasetPath);
+            self.attributes = try DatasetAttributes(ReaderType).init(self.allocator, self.datasetPath);
             var r = self.source.reader();
             // fail silently in case the source is to be written.
             var mode = r.readIntBig(u16) catch return;

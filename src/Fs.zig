@@ -18,9 +18,16 @@ basePath: []const u8,
 pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
     var data_path = try path.join(allocator, &.{ basePath, "data.n5" });
     errdefer allocator.free(data_path);
-    // TODO: catch error here and if dir does not exist, create it.
-    // It can be the case if the Fs in used for writing.
-    var dir = try std.fs.openDirAbsolute(data_path, .{});
+    // Catch the error here if dir does not exist and create it.
+    // It means that the Fs in used for writing.
+    var dir: std.fs.Dir = undefined;
+    dir = std.fs.openDirAbsolute(data_path, .{}) catch |err| blk: {
+        if (err == std.fs.Dir.OpenError.FileNotFound) {
+            try dir.makePath(data_path);
+            dir = try std.fs.openDirAbsolute(data_path, .{});
+            break :blk dir;
+        } else return err;
+    };
     defer dir.close();
 
     return Fs{
@@ -33,24 +40,12 @@ pub fn deinit(self: *Fs) void {
     self.allocator.free(self.basePath);
 }
 
-// implement the writer interface
-pub const Writer = io.Writer(*Fs, anyerror, write);
-
-pub fn write(self: *Fs, bytes: []const u8) !usize {
-    _ = self;
-    _ = bytes;
-    return 0;
-}
-
-pub fn writer(self: *Fs) Writer {
-    return .{ .context = self };
-}
-
 /// returns the datablock at the provided coordinates.
 pub fn getBlock(
     self: *Fs,
     datasetPath: []const u8,
     gridPosition: []i64,
+    attributes: DatasetAttributes(std.fs.File),
 ) !Datablock(std.fs.File) {
     var dataset_full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
     defer self.allocator.free(dataset_full_path);
@@ -59,7 +54,7 @@ pub fn getBlock(
     // TODO: catch the error and create the file for the writer.
     var fd = try std.fs.openFileAbsolute(datablock_path, .{});
 
-    return Datablock(std.fs.File).init(self.allocator, fd, dataset_full_path, gridPosition);
+    return Datablock(std.fs.File).init(self.allocator, fd, dataset_full_path, gridPosition, attributes);
 }
 
 fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 {
@@ -79,14 +74,44 @@ fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 
     return final_path;
 }
 
+pub fn datasetAttributes(self: *Fs, datasetPath: []const u8) !DatasetAttributes(std.fs.File) {
+    var attr_full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
+    defer self.allocator.free(attr_full_path);
+
+    return DatasetAttributes(std.fs.File).init(self.allocator, attr_full_path);
+}
+
 test "init" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = &gpa.allocator;
 
     var path_buffer: [std.os.PATH_MAX]u8 = undefined;
     var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
+    var n5_path = try path.join(allocator, &.{ full_path, "data.n5" });
     var fs = try Fs.init(allocator, full_path);
+    _ = try std.fs.openDirAbsolute(n5_path, .{});
     fs.deinit();
+    allocator.free(n5_path);
+
+    try std.testing.expect(!gpa.deinit());
+}
+
+test "init new folder" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = &gpa.allocator;
+
+    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    var full_path = try std.fs.realpath("testdata", &path_buffer);
+    var data_path = try path.join(allocator, &.{ full_path, "banana" });
+    var dir: std.fs.Dir = undefined;
+    try dir.deleteTree(data_path);
+    var n5_path = try path.join(allocator, &.{ data_path, "data.n5" });
+    var fs = try Fs.init(allocator, data_path);
+    _ = try std.fs.openDirAbsolute(n5_path, .{});
+    fs.deinit();
+    try dir.deleteTree(data_path);
+    allocator.free(n5_path);
+    allocator.free(data_path);
 
     try std.testing.expect(!gpa.deinit());
 }
@@ -100,9 +125,12 @@ test "lz4" {
     var fs = try Fs.init(allocator, full_path);
     errdefer fs.deinit();
 
+    var attr = try fs.datasetAttributes("0/0");
+    errdefer attr.deinit();
+
     var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
 
-    var d_block = try fs.getBlock("0/0", &grid_position);
+    var d_block = try fs.getBlock("0/0", &grid_position, attr);
     errdefer d_block.deinit();
     var out = std.io.getStdOut();
     var buf = try allocator.alloc(u8, d_block.len);
@@ -113,6 +141,26 @@ test "lz4" {
 
     allocator.free(buf);
     d_block.deinit();
+    attr.deinit();
     fs.deinit();
     try std.testing.expect(!gpa.deinit());
+}
+
+test "write" {
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = &gpa.allocator;
+
+    // var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    // var full_path = try std.fs.realpath("testdata/write_lz4", &path_buffer);
+    // var fs = try Fs.init(allocator, full_path);
+    // errdefer fs.deinit();
+
+    // var attr = try fs.datasetAttributes("0/0");
+    // errdefer attr.deinit();
+
+    // var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
+
+    // var d_block = try fs.getBlock("0/0", &grid_position, attr);
+    // errdefer d_block.deinit();
+
 }

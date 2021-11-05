@@ -31,11 +31,12 @@ pub fn Datablock(comptime ReaderType: type) type {
             source: ReaderType,
             datasetPath: []const u8,
             gridPosition: []i64,
+            attributes: ?DatasetAttributes(ReaderType),
         ) !Self {
             var d_block = Self{
                 .allocator = a,
                 .source = source,
-                .attributes = null,
+                .attributes = attributes,
                 .datasetPath = datasetPath,
                 .gridPosition = gridPosition,
                 .size = undefined,
@@ -52,6 +53,18 @@ pub fn Datablock(comptime ReaderType: type) type {
             if (self.attributes) |*attr| {
                 attr.*.deinit();
             }
+        }
+
+        pub const Writer = io.Writer(*Self, anyerror, write);
+
+        pub fn write(self: *Self, bytes: []const u8) !usize {
+            _ = self;
+            _ = bytes;
+            return 0;
+        }
+
+        pub fn writer(self: *Self) Writer {
+            return .{ .context = self };
         }
 
         pub const Reader = io.Reader(*Self, anyerror, read);

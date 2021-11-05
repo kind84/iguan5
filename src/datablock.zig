@@ -50,9 +50,6 @@ pub fn Datablock(comptime ReaderType: type) type {
         pub fn deinit(self: *Self) void {
             self.source.close();
             self.allocator.free(self.size);
-            if (self.attributes) |*attr| {
-                attr.*.deinit();
-            }
         }
 
         pub const Writer = io.Writer(*Self, anyerror, write);
@@ -163,7 +160,6 @@ pub fn Datablock(comptime ReaderType: type) type {
         }
 
         fn initChunk(self: *Self) !void {
-            self.attributes = try DatasetAttributes(ReaderType).init(self.allocator, self.datasetPath);
             var r = self.source.reader();
             // fail silently in case the source is to be written.
             var mode = r.readIntBig(u16) catch return;

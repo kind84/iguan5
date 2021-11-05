@@ -57,20 +57,29 @@ pub fn getBlock(
     return Datablock(std.fs.File).init(self.allocator, fd, dataset_full_path, gridPosition, attributes);
 }
 
-fn datablockPath(self: *Fs, datasetPath: []const u8, gridPosition: []i64) ![]u8 {
-    var full_path = try path.resolve(self.allocator, &.{datasetPath});
-    defer self.allocator.free(full_path);
-    for (gridPosition) |gp| {
+fn datablockPath(self: *Fs, datasetPath: []u8, gridPosition: []i64) ![]u8 {
+    var gps = try self.allocator.alloc([]u8, gridPosition.len + 1);
+    defer {
+        // gps[0] is already freed by the caller
+        var i: u8 = 1;
+        while (i < gps.len) : (i += 1) {
+            self.allocator.free(gps[i]);
+        }
+        self.allocator.free(gps);
+    }
+    gps[0] = datasetPath;
+    for (gridPosition) |gp, i| {
         const gp_str = try fmt.allocPrint(self.allocator, "{d}", .{gp});
         defer self.allocator.free(gp_str);
-        var temp_path = try path.join(self.allocator, &.{ full_path, gp_str });
-        defer self.allocator.free(temp_path);
-        full_path = try self.allocator.resize(full_path, temp_path.len);
-        std.mem.copy(u8, full_path, temp_path);
+        gps[i + 1] = try self.allocator.alloc(u8, gp_str.len);
+        std.mem.copy(u8, gps[i + 1], gp_str);
     }
 
+    var full_path = try path.join(self.allocator, gps);
+    defer self.allocator.free(full_path);
     var final_path = try self.allocator.alloc(u8, full_path.len);
     std.mem.copy(u8, final_path, full_path);
+    std.debug.print("{s}\n", .{final_path});
     return final_path;
 }
 

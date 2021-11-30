@@ -8,6 +8,7 @@ const DatasetAttributes = @import("dataset_attributes.zig").DatasetAttributes;
 const DataType = @import("dataset_attributes.zig").DataType;
 const Compression = @import("dataset_attributes.zig").Compression;
 const CompressionType = @import("dataset_attributes.zig").CompressionType;
+const util = @import("util.zig");
 
 /// interacts with N5 on a local filesystem.
 pub const Fs = @This();
@@ -94,7 +95,8 @@ test "init" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = &gpa.allocator;
 
-    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    comptime var buff_size = util.pathBufferSize();
+    var path_buffer: [buff_size]u8 = undefined;
     var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var n5_path = try path.join(allocator, &.{ full_path, "data.n5" });
     var fs = try Fs.init(allocator, full_path);
@@ -109,15 +111,17 @@ test "init new folder" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = &gpa.allocator;
 
-    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    comptime var buff_size = util.pathBufferSize();
+    var path_buffer: [buff_size]u8 = undefined;
     var full_path = try std.fs.realpath("testdata", &path_buffer);
     var data_path = try path.join(allocator, &.{ full_path, "banana" });
     var dir: std.fs.Dir = undefined;
     try dir.deleteTree(data_path);
     var n5_path = try path.join(allocator, &.{ data_path, "data.n5" });
     var fs = try Fs.init(allocator, data_path);
-    _ = try std.fs.openDirAbsolute(n5_path, .{});
+    dir = try std.fs.openDirAbsolute(n5_path, .{});
     fs.deinit();
+    dir.close();
     try dir.deleteTree(data_path);
     allocator.free(n5_path);
     allocator.free(data_path);
@@ -129,7 +133,8 @@ test "lz4" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = &gpa.allocator;
 
-    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    comptime var buff_size = util.pathBufferSize();
+    var path_buffer: [buff_size]u8 = undefined;
     var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
     errdefer fs.deinit();

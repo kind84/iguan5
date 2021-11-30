@@ -10,6 +10,7 @@ const path = std.fs.path;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const Allocator = mem.Allocator;
+const util = @import("util.zig");
 
 const json_file = "attributes.json";
 
@@ -220,7 +221,8 @@ pub const DataType = enum {
 test "init" {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
     var allocator = &gpa.allocator;
-    var path_buffer: [os.PATH_MAX]u8 = undefined;
+    comptime var buff_size = util.pathBufferSize();
+    var path_buffer: [buff_size]u8 = undefined;
     var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
 
     var da = try DatasetAttributes(std.fs.File).init(allocator, full_path);

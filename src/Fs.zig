@@ -13,10 +13,10 @@ const util = @import("util.zig");
 /// interacts with N5 on a local filesystem.
 pub const Fs = @This();
 
-allocator: *Allocator,
+allocator: Allocator,
 basePath: []const u8,
 
-pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
+pub fn init(allocator: Allocator, basePath: []const u8) !Fs {
     var data_path = try path.join(allocator, &.{ basePath, "data.n5" });
     errdefer allocator.free(data_path);
     // Catch the error here if dir does not exist and create it.
@@ -37,13 +37,13 @@ pub fn init(allocator: *Allocator, basePath: []const u8) !Fs {
     };
 }
 
-pub fn deinit(self: *Fs) void {
+pub fn deinit(self: Fs) void {
     self.allocator.free(self.basePath);
 }
 
 /// returns the datablock at the provided coordinates.
 pub fn getBlock(
-    self: *Fs,
+    self: Fs,
     datasetPath: []const u8,
     gridPosition: []i64,
     attributes: DatasetAttributes(std.fs.File),
@@ -52,13 +52,19 @@ pub fn getBlock(
     defer self.allocator.free(dataset_full_path);
     var datablock_path = try self.datablockPath(dataset_full_path, gridPosition);
     defer self.allocator.free(datablock_path);
-    // TODO: catch the error and create the file for the writer.
-    var fd = try std.fs.openFileAbsolute(datablock_path, .{});
+    // catch the error and create the file for the writer.
+    var fd: std.fs.File = undefined;
+    fd = std.fs.openFileAbsolute(datablock_path, .{}) catch |err| blk: {
+        if (err == std.fs.Dir.OpenError.FileNotFound) {
+            fd = try std.fs.createFileAbsolute(datablock_path, .{});
+            break :blk fd;
+        } else return err;
+    };
 
     return Datablock(std.fs.File).init(self.allocator, fd, dataset_full_path, gridPosition, attributes);
 }
 
-fn datablockPath(self: *Fs, datasetPath: []u8, gridPosition: []i64) ![]u8 {
+fn datablockPath(self: Fs, datasetPath: []u8, gridPosition: []i64) ![]u8 {
     var gps = try self.allocator.alloc([]u8, gridPosition.len + 1);
     defer {
         // gps[0] is already freed by the caller
@@ -80,11 +86,10 @@ fn datablockPath(self: *Fs, datasetPath: []u8, gridPosition: []i64) ![]u8 {
     defer self.allocator.free(full_path);
     var final_path = try self.allocator.alloc(u8, full_path.len);
     std.mem.copy(u8, final_path, full_path);
-    std.debug.print("{s}\n", .{final_path});
     return final_path;
 }
 
-pub fn datasetAttributes(self: *Fs, datasetPath: []const u8) !DatasetAttributes(std.fs.File) {
+pub fn datasetAttributes(self: Fs, datasetPath: []const u8) !DatasetAttributes(std.fs.File) {
     var attr_full_path = try path.join(self.allocator, &.{ self.basePath, datasetPath });
     defer self.allocator.free(attr_full_path);
 
@@ -93,7 +98,7 @@ pub fn datasetAttributes(self: *Fs, datasetPath: []const u8) !DatasetAttributes(
 
 test "init" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     comptime var buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -109,7 +114,7 @@ test "init" {
 
 test "init new folder" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     comptime var buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -129,9 +134,9 @@ test "init new folder" {
     try std.testing.expect(!gpa.deinit());
 }
 
-test "lz4" {
+test "read lz4" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     comptime var buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -160,21 +165,49 @@ test "lz4" {
     try std.testing.expect(!gpa.deinit());
 }
 
-test "write" {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = &gpa.allocator;
-
-    // var path_buffer: [std.os.PATH_MAX]u8 = undefined;
-    // var full_path = try std.fs.realpath("testdata/write_lz4", &path_buffer);
-    // var fs = try Fs.init(allocator, full_path);
-    // errdefer fs.deinit();
-
-    // var attr = try fs.datasetAttributes("0/0");
-    // errdefer attr.deinit();
-
-    // var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
-
-    // var d_block = try fs.getBlock("0/0", &grid_position, attr);
-    // errdefer d_block.deinit();
-
-}
+// test "write lz4" {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     const allocator = gpa.allocator();
+//
+//     comptime var buff_size = util.pathBufferSize();
+//     var path_buffer: [buff_size]u8 = undefined;
+//     var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
+//     var fs = try Fs.init(allocator, full_path);
+//     errdefer fs.deinit();
+//
+//     var attr = try fs.datasetAttributes("0/0");
+//     errdefer attr.deinit();
+//
+//     var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
+//
+//     var d_block = try fs.getBlock("0/0", &grid_position, attr);
+//     errdefer d_block.deinit();
+//     var buf_r = try allocator.alloc(u8, d_block.len);
+//     errdefer allocator.free(buf_r);
+//     _ = try d_block.reader().read(buf_r);
+//
+//     grid_position[4] = 1;
+//
+//     var d_block_w = try fs.getBlock("0/0", &grid_position, attr);
+//     // errdefer d_block_w.deinit();
+//     //var file_path_buffer: [buff_size]u8 = undefined;
+//     //var file_full_path = try std.fs.realpath("testdata/lynx_lz4/data.n5/0/0/0/0/0/0/1", &file_path_buffer);
+//     // defer std.fs.deleteFileAbsolute(file_full_path) catch unreachable;
+//     _ = try d_block_w.writer(0).write(buf_r);
+//     d_block_w.deinit();
+//
+//     // var d_block_r2 = try fs.getBlock("0/0", &grid_position, attr);
+//     // errdefer d_block_r2.deinit();
+//     // var buf_w = try allocator.alloc(u8, d_block_r2.len);
+//     // errdefer allocator.free(buf_w);
+//     // _ = try d_block_r2.reader().read(buf_w);
+//     // try std.testing.expect(buf_w.len == buf_r.len);
+//
+//     allocator.free(buf_r);
+//     //allocator.free(buf_w);
+//     //d_block_r2.deinit();
+//     d_block.deinit();
+//     attr.deinit();
+//     fs.deinit();
+//     try std.testing.expect(!gpa.deinit());
+// }

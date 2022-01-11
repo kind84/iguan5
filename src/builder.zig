@@ -3,7 +3,7 @@ const path = std.fs.path;
 
 const Self = @This();
 
-allocator: *std.mem.Allocator,
+allocator: std.mem.Allocator,
 src_path: []const u8,
 include_dir: []const u8,
 

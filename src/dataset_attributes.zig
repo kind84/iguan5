@@ -16,7 +16,7 @@ const json_file = "attributes.json";
 
 pub fn DatasetAttributes(comptime AttributesType: type) type {
     return struct {
-        allocator: *Allocator,
+        allocator: Allocator,
         dimensions: []u64,
         blockSize: []u64,
         dataType: DataType,
@@ -24,20 +24,24 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
 
         const Self = @This();
 
-        pub fn init(allocator: *Allocator, attr_path: []const u8) !Self {
+        pub fn init(allocator: Allocator, source: []const u8) !Self {
             var str: []u8 = undefined;
             defer allocator.free(str);
             var attr: AttributesType = undefined;
-            defer attr.close();
 
             switch (AttributesType) {
                 std.fs.File => {
-                    var full_path = try path.join(allocator, &.{ attr_path, json_file });
+                    defer attr.close();
+                    var full_path = try path.join(allocator, &.{ source, json_file });
                     defer allocator.free(full_path);
 
                     attr = try fs.openFileAbsolute(full_path, .{});
                     var max_size = try attr.getEndPos();
                     str = try attr.readToEndAlloc(allocator, max_size);
+                },
+                []u8, []const u8 => {
+                    str = try allocator.alloc(u8, source.len);
+                    std.mem.copy(u8, str, source[0..]);
                 },
                 else => unreachable,
             }
@@ -218,9 +222,9 @@ pub const DataType = enum {
     object,
 };
 
-test "init" {
+test "init file" {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
-    var allocator = &gpa.allocator;
+    var allocator = gpa.allocator();
     comptime var buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
@@ -239,6 +243,31 @@ test "init" {
     try expect(da.compression.type == CompressionType.raw);
     try expect(da.compression.useZlib == false);
     try expect(da.compression.blockSize == 0);
+    try expect(da.compression.level == 0);
+    da.deinit();
+    try expect(!gpa.deinit());
+}
+
+test "init buffer" {
+    var attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
+
+    var gpa = heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
+
+    var da = try DatasetAttributes([]const u8).init(allocator, attr);
+
+    try expect(da.dataType == DataType.uint8);
+    var expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
+    for (expected_dim) |dim, i| {
+        try expect(da.dimensions[i] == dim);
+    }
+    var expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
+    for (expected_block_size) |block, i| {
+        try expect(da.blockSize[i] == block);
+    }
+    try expect(da.compression.type == CompressionType.lz4);
+    try expect(da.compression.useZlib == false);
+    try expect(da.compression.blockSize == 65536);
     try expect(da.compression.level == 0);
     da.deinit();
     try expect(!gpa.deinit());

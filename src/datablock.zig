@@ -126,16 +126,17 @@ pub fn Datablock(comptime SourceType: type) type {
                     CompressionType.blosc => unreachable,
                     CompressionType.lz4 => {
                         // TODO: use lz4 compress bound func to comput dest size
-                        var draft_buf = try self.allocator.alloc(u8, bytes.len + 1);
-                        defer self.allocator.free(draft_buf);
+                        var dest_size_c = c.LZ4_compressBound(@intCast(c_int, bytes.len));
+                        var dest_size = @intCast(usize, dest_size_c);
+                        var dest_buf = try self.allocator.alloc(u8, dest_size);
+                        defer self.allocator.free(dest_buf);
 
                         var comp = c.LZ4_compress_default(
                             bytes.ptr,
-                            draft_buf.ptr,
+                            dest_buf.ptr,
                             @intCast(c_int, bytes.len),
-                            @intCast(c_int, bytes.len + 1),
+                            dest_size_c,
                         );
-                        std.debug.print("LZ4 compressed length [{d}]\n", .{comp});
 
                         // 21 bytes lz4 header:
                         // 9 bytes: magic + token (Lz4Block&)
@@ -149,7 +150,7 @@ pub fn Datablock(comptime SourceType: type) type {
                         _ = try w.writeIntLittle(i32, @intCast(i32, bytes.len));
                         _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
 
-                        var comp_buf = draft_buf[0..@intCast(usize, comp)];
+                        var comp_buf = dest_buf[0..@intCast(usize, comp)];
 
                         _ = try w.write(comp_buf);
 

@@ -131,12 +131,15 @@ pub fn Datablock(comptime SourceType: type) type {
                         var dest_buf = try self.allocator.alloc(u8, dest_size);
                         defer self.allocator.free(dest_buf);
 
-                        var comp = c.LZ4_compress_default(
+                        var comp_c = c.LZ4_compress_default(
                             bytes.ptr,
                             dest_buf.ptr,
                             @intCast(c_int, bytes.len),
                             dest_size_c,
                         );
+
+                        // if compression failed use the original length
+                        var comp: i32 = if (comp_c == 0) @intCast(i32, bytes.len) else @intCast(i32, comp_c);
 
                         // 21 bytes lz4 header:
                         // 9 bytes: magic + token (Lz4Block&)
@@ -146,7 +149,7 @@ pub fn Datablock(comptime SourceType: type) type {
                         //
                         // // TODO: group in a buffer and write once
                         _ = try w.write(&lz4Magic);
-                        _ = try w.writeIntLittle(i32, @intCast(i32, comp));
+                        _ = try w.writeIntLittle(i32, comp);
                         _ = try w.writeIntLittle(i32, @intCast(i32, bytes.len));
                         _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
 
@@ -156,7 +159,7 @@ pub fn Datablock(comptime SourceType: type) type {
 
                         // signal end of lz4 block
                         _ = try w.write(&lz4Magic);
-                        _ = try w.writeIntLittle(i32, @intCast(i32, comp));
+                        _ = try w.writeIntLittle(i32, comp);
                         _ = try w.writeIntLittle(i32, 0x0000);
                         _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
 
@@ -274,7 +277,7 @@ pub fn Datablock(comptime SourceType: type) type {
         }
 
         fn initChunk(self: *Self) !void {
-            // early return in case the file is empty (aka to be written)
+            // early return in case the file is empty
             switch (SourceType) {
                 []const u8, std.fs.File => {
                     var size = try self.seeker().getEndPos();

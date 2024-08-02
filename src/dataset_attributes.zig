@@ -32,11 +32,11 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
             switch (AttributesType) {
                 std.fs.File => {
                     defer attr.close();
-                    var full_path = try path.join(allocator, &.{ source, json_file });
+                    const full_path = try path.join(allocator, &.{ source, json_file });
                     defer allocator.free(full_path);
 
                     attr = try fs.openFileAbsolute(full_path, .{});
-                    var max_size = try attr.getEndPos();
+                    const max_size = try attr.getEndPos();
                     str = try attr.readToEndAlloc(allocator, max_size);
                 },
                 []u8, []const u8 => {
@@ -66,7 +66,7 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
             while (try stream.next()) |token| {
                 switch (token) {
                     .String => |string| {
-                        var st = string.slice(stream.slice, stream.i - 1);
+                        const st = string.slice(stream.slice, stream.i - 1);
                         if (mem.eql(u8, st, "dataType")) {
                             next_data_type = true;
                             continue;
@@ -126,24 +126,24 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                     },
                     .Number => |num| {
                         if (next_dimensions) {
-                            var val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
+                            const val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
                             try dimensions.append(val);
                             continue;
                         }
                         if (next_block_size) {
                             if (next_compression) {
-                                var val = try fmt.parseInt(u32, num.slice(stream.slice, stream.i - 1), 10);
+                                const val = try fmt.parseInt(u32, num.slice(stream.slice, stream.i - 1), 10);
                                 comp_block_size = val;
                                 next_block_size = false;
                                 continue;
                             } else {
-                                var val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
+                                const val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
                                 try block_size.append(val);
                                 continue;
                             }
                         }
                         if (next_level) {
-                            var val = try fmt.parseInt(i32, num.slice(stream.slice, stream.i - 1), 10);
+                            const val = try fmt.parseInt(i32, num.slice(stream.slice, stream.i - 1), 10);
                             level = val;
                             next_level = false;
                             continue;
@@ -224,20 +224,20 @@ pub const DataType = enum {
 
 test "init file" {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
-    comptime var buff_size = util.pathBufferSize();
+    const allocator = gpa.allocator();
+    const buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
-    var full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
+    const full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
 
     var da = try DatasetAttributes(std.fs.File).init(allocator, full_path);
 
     try expect(da.dataType == DataType.uint8);
-    var expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
-    for (expected_dim) |dim, i| {
+    const expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
+    for (expected_dim, 0..) |dim, i| {
         try expect(da.dimensions[i] == dim);
     }
-    var expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
-    for (expected_block_size) |block, i| {
+    const expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
+    for (expected_block_size, 0..) |block, i| {
         try expect(da.blockSize[i] == block);
     }
     try expect(da.compression.type == CompressionType.raw);
@@ -249,20 +249,20 @@ test "init file" {
 }
 
 test "init buffer" {
-    var attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
+    const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
     var gpa = heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     var da = try DatasetAttributes([]const u8).init(allocator, attr);
 
     try expect(da.dataType == DataType.uint8);
-    var expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
-    for (expected_dim) |dim, i| {
+    const expected_dim = [_]u64{ 1920, 1080, 3, 1, 1 };
+    for (expected_dim, 0..) |dim, i| {
         try expect(da.dimensions[i] == dim);
     }
-    var expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
-    for (expected_block_size) |block, i| {
+    const expected_block_size = [_]u64{ 512, 512, 1, 1, 1 };
+    for (expected_block_size, 0..) |block, i| {
         try expect(da.blockSize[i] == block);
     }
     try expect(da.compression.type == CompressionType.lz4);

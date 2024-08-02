@@ -98,13 +98,13 @@ pub fn Datablock(comptime SourceType: type) type {
             }
 
             // write the header
-            var sizes = self.attributes.?.blockSize;
-            var dims = self.attributes.?.dimensions;
-            try w.writeIntBig(u16, @intCast(u16, self.mode));
+            const sizes = self.attributes.?.blockSize;
+            const dims = self.attributes.?.dimensions;
+            try w.writeIntBig(u16, @as(u16, self.mode));
             if (self.mode < 2) {
-                try w.writeIntBig(u16, @intCast(u16, sizes.len));
+                try w.writeIntBig(u16, @as(u16, sizes.len));
                 for (sizes) |s| {
-                    try w.writeIntBig(u32, @intCast(u32, s));
+                    try w.writeIntBig(u32, @as(u32, s));
                 }
                 if (self.mode == 1) {
                     try w.writeIntBig(u32, totalElements(u64, dims));
@@ -117,7 +117,7 @@ pub fn Datablock(comptime SourceType: type) type {
             if (self.attributes) |attr| {
                 switch (attr.compression.type) {
                     CompressionType.raw => {
-                        var n = try w.write(bytes);
+                        const n = try w.write(bytes);
                         self.len = n;
                         return n;
                     },
@@ -126,20 +126,20 @@ pub fn Datablock(comptime SourceType: type) type {
                     CompressionType.blosc => unreachable,
                     CompressionType.lz4 => {
                         // TODO: use lz4 compress bound func to comput dest size
-                        var dest_size_c = c.LZ4_compressBound(@intCast(c_int, bytes.len));
-                        var dest_size = @intCast(usize, dest_size_c);
+                        const dest_size_c = c.LZ4_compressBound(@as(c_int, bytes.len));
+                        const dest_size = @as(usize, dest_size_c);
                         var dest_buf = try self.allocator.alloc(u8, dest_size);
                         defer self.allocator.free(dest_buf);
 
-                        var comp_c = c.LZ4_compress_default(
+                        const comp_c = c.LZ4_compress_default(
                             bytes.ptr,
                             dest_buf.ptr,
-                            @intCast(c_int, bytes.len),
+                            @as(c_int, bytes.len),
                             dest_size_c,
                         );
 
                         // if compression failed use the original length
-                        var comp: i32 = if (comp_c == 0) @intCast(i32, bytes.len) else @intCast(i32, comp_c);
+                        const comp: i32 = if (comp_c == 0) @as(i32, bytes.len) else @as(i32, comp_c);
 
                         // 21 bytes lz4 header:
                         // 9 bytes: magic + token (Lz4Block&)
@@ -150,10 +150,10 @@ pub fn Datablock(comptime SourceType: type) type {
                         // // TODO: group in a buffer and write once
                         _ = try w.write(&lz4Magic);
                         _ = try w.writeIntLittle(i32, comp);
-                        _ = try w.writeIntLittle(i32, @intCast(i32, bytes.len));
+                        _ = try w.writeIntLittle(i32, @as(i32, bytes.len));
                         _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
 
-                        var comp_buf = dest_buf[0..@intCast(usize, comp)];
+                        const comp_buf = dest_buf[0..@as(usize, comp)];
 
                         _ = try w.write(comp_buf);
 
@@ -163,7 +163,7 @@ pub fn Datablock(comptime SourceType: type) type {
                         _ = try w.writeIntLittle(i32, 0x0000);
                         _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
 
-                        var compr_len = @intCast(usize, comp);
+                        const compr_len = @as(usize, comp);
                         if (compr_len <= bytes.len) {
                             self.len = compr_len;
                         } else {
@@ -210,32 +210,32 @@ pub fn Datablock(comptime SourceType: type) type {
                             // compressedLength(4 bytes)
                             // decompressedLength(4 bytes)
                             // checksum 4 bytes
-                            var comp_size = try r.readIntLittle(i32);
-                            var decomp_size = try r.readIntLittle(i32);
+                            const comp_size = try r.readIntLittle(i32);
+                            const decomp_size = try r.readIntLittle(i32);
                             // var checksum = try r.readIntLittle(i32);
                             try s.seekBy(4);
                             if (decomp_size == 0) {
                                 break;
                             }
 
-                            var comp_buf = try self.allocator.alloc(u8, @intCast(usize, comp_size));
+                            const comp_buf = try self.allocator.alloc(u8, @as(usize, comp_size));
                             defer self.allocator.free(comp_buf);
                             _ = try r.read(comp_buf);
 
-                            var res = c.LZ4_decompress_safe(
+                            const res = c.LZ4_decompress_safe(
                                 comp_buf.ptr,
                                 buffer.ptr + current_byte,
-                                @intCast(c_int, comp_size),
-                                @intCast(c_int, decomp_size),
+                                @as(c_int, comp_size),
+                                @as(c_int, decomp_size),
                             );
 
                             if (res < 0) {
                                 return error.LZ4DecompressionError;
                             }
                             decompressed += res;
-                            current_byte += @intCast(usize, decomp_size);
+                            current_byte += @as(usize, decomp_size);
                         }
-                        return @intCast(usize, decompressed);
+                        return @as(usize, decompressed);
                     },
                     CompressionType.xz => unreachable,
                 }
@@ -280,7 +280,7 @@ pub fn Datablock(comptime SourceType: type) type {
             // early return in case the file is empty
             switch (SourceType) {
                 []const u8, std.fs.File => {
-                    var size = try self.seeker().getEndPos();
+                    const size = try self.seeker().getEndPos();
                     if (size == 0) return;
                 },
                 []u8 => {
@@ -290,7 +290,7 @@ pub fn Datablock(comptime SourceType: type) type {
             }
 
             var r = self.stream.reader();
-            var mode = try r.readIntBig(u16);
+            const mode = try r.readIntBig(u16);
             var block_size: []u32 = undefined;
             var elements_no: u32 = undefined;
 
@@ -307,12 +307,12 @@ pub fn Datablock(comptime SourceType: type) type {
             //      repository, but from the java implementation we can see that this mode is
             //      used for data of type OBJECT.
             if (mode < 2) {
-                var dim_no = try r.readIntBig(u16);
+                const dim_no = try r.readIntBig(u16);
 
                 block_size = try self.allocator.alloc(u32, dim_no);
                 var i: u16 = 0;
                 while (i < dim_no) : (i += 1) {
-                    var dim_size = try r.readIntBig(u32);
+                    const dim_size = try r.readIntBig(u32);
                     block_size[i] = dim_size;
                 }
 
@@ -334,7 +334,7 @@ pub fn Datablock(comptime SourceType: type) type {
                 }
             }
 
-            self.len = @intCast(usize, len);
+            self.len = @as(usize, len);
             self.elementsNo = elements_no;
             self.size = block_size;
         }
@@ -345,12 +345,12 @@ test "raw file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    comptime var buff_size = util.pathBufferSize();
+    const buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
-    var full_path = try std.fs.realpath("testdata/lynx_raw", &path_buffer);
+    const full_path = try std.fs.realpath("testdata/lynx_raw", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
 
-    var fs_path = try std.fs.path.join(allocator, &[_][]const u8{ full_path, "data.n5/0/0/0/0/0/0/1" });
+    const fs_path = try std.fs.path.join(allocator, &[_][]const u8{ full_path, "data.n5/0/0/0/0/0/0/1" });
     std.fs.deleteFileAbsolute(fs_path) catch {};
 
     var d_attr = try fs.datasetAttributes("0/0");
@@ -358,13 +358,13 @@ test "raw file" {
     var grid_position = [_]i64{ 0, 0, 0, 0, 1 };
     var d_block = try fs.getBlock("0/0", &grid_position, d_attr);
 
-    var deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
+    const deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     _ = try d_block.writer(0).write(deadbeef);
 
     d_block.deinit();
 
     d_block = try fs.getBlock("0/0", &grid_position, d_attr);
-    var out_buf = try allocator.alloc(u8, deadbeef.len);
+    const out_buf = try allocator.alloc(u8, deadbeef.len);
     _ = try d_block.reader().read(out_buf);
     try std.testing.expect(std.mem.eql(u8, out_buf, deadbeef));
 
@@ -381,12 +381,12 @@ test "LZ4 file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    comptime var buff_size = util.pathBufferSize();
+    const buff_size = util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
-    var full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
+    const full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
 
-    var fs_path = try std.fs.path.join(allocator, &[_][]const u8{ full_path, "data.n5/0/0/0/0/0/0/1" });
+    const fs_path = try std.fs.path.join(allocator, &[_][]const u8{ full_path, "data.n5/0/0/0/0/0/0/1" });
     std.fs.deleteFileAbsolute(fs_path) catch {};
 
     var d_attr = try fs.datasetAttributes("0/0");
@@ -394,13 +394,13 @@ test "LZ4 file" {
     var grid_position = [_]i64{ 0, 0, 0, 0, 1 };
     var d_block = try fs.getBlock("0/0", &grid_position, d_attr);
 
-    var deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
+    const deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     _ = try d_block.writer(0).write(deadbeef);
 
     d_block.deinit();
 
     d_block = try fs.getBlock("0/0", &grid_position, d_attr);
-    var out_buf = try allocator.alloc(u8, deadbeef.len);
+    const out_buf = try allocator.alloc(u8, deadbeef.len);
     _ = try d_block.reader().read(out_buf);
     try std.testing.expect(std.mem.eql(u8, out_buf, deadbeef));
 
@@ -414,7 +414,7 @@ test "LZ4 file" {
 }
 
 test "raw bytes" {
-    var attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"raw\"},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
+    const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"raw\"},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
@@ -422,10 +422,10 @@ test "raw bytes" {
     var d_attr = try DatasetAttributes([]u8).init(allocator, attr);
     var d_block = try Datablock([]u8).init(allocator, null, &.{}, &.{}, d_attr);
 
-    var deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
+    const deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     _ = try d_block.writer(0).write(deadbeef);
 
-    var out_buf = try allocator.alloc(u8, d_block.len);
+    const out_buf = try allocator.alloc(u8, d_block.len);
     try d_block.initChunk();
     _ = try d_block.reader().read(out_buf);
     try std.testing.expect(std.mem.eql(u8, out_buf, deadbeef));
@@ -437,7 +437,7 @@ test "raw bytes" {
 }
 
 test "LZ4 bytes" {
-    var attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
+    const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     var allocator = gpa.allocator();
@@ -445,10 +445,10 @@ test "LZ4 bytes" {
     var d_attr = try DatasetAttributes([]u8).init(allocator, attr);
     var d_block = try Datablock([]u8).init(allocator, null, &.{}, &.{}, d_attr);
 
-    var deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
+    const deadbeef = &[_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     _ = try d_block.writer(0).write(deadbeef);
 
-    var out_buf = try allocator.alloc(u8, d_block.len);
+    const out_buf = try allocator.alloc(u8, d_block.len);
     try d_block.initChunk();
     _ = try d_block.reader().read(out_buf);
     std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(out_buf)});
@@ -464,7 +464,7 @@ fn totalElements(comptime T: type, dimensions: []T) u32 {
     if (dimensions.len == 0) return 0;
     var n: u32 = 1;
     for (dimensions) |d| {
-        n *= @intCast(u32, d);
+        n *= @as(u32, d);
     }
     return n;
 }
@@ -472,7 +472,7 @@ fn totalElements(comptime T: type, dimensions: []T) u32 {
 test "totalElements" {
     var dim0 = [_]u32{};
     var dim1 = [_]u32{ 1, 2, 3 };
-    var tests = [_]struct {
+    const tests = [_]struct {
         dimensions: []u32,
         expected: u32,
     }{
@@ -487,7 +487,7 @@ test "totalElements" {
     };
 
     for (tests) |t| {
-        var n = totalElements(u32, t.dimensions);
+        const n = totalElements(u32, t.dimensions);
 
         try std.testing.expect(n == t.expected);
     }

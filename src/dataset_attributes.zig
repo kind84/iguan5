@@ -41,12 +41,12 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                 },
                 []u8, []const u8 => {
                     str = try allocator.alloc(u8, source.len);
-                    std.mem.copy(u8, str, source[0..]);
+                    @memcpy(str, source[0..]);
                 },
                 else => unreachable,
             }
 
-            var stream = json.TokenStream.init(str);
+            var stream = json.Scanner.initCompleteInput(allocator, str);
 
             var next_data_type = false;
             var next_compression = false;
@@ -63,10 +63,32 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
             var level: i32 = 0;
             var zlib = false;
 
-            while (try stream.next()) |token| {
+            while (stream.next()) |token| {
                 switch (token) {
-                    .String => |string| {
-                        const st = string.slice(stream.slice, stream.i - 1);
+                    // object_begin,
+                    // object_end,
+                    // array_begin,
+                    // array_end,
+
+                    // true,
+                    // false,
+                    // null,
+
+                    // number: []const u8,
+                    // partial_number: []const u8,
+                    // allocated_number: []u8,
+
+                    // string: []const u8,
+                    // partial_string: []const u8,
+                    // partial_string_escaped_1: [1]u8,
+                    // partial_string_escaped_2: [2]u8,
+                    // partial_string_escaped_3: [3]u8,
+                    // partial_string_escaped_4: [4]u8,
+                    // allocated_string: []u8,
+
+                    // end_of_document,
+                    .string => |st| {
+                        // const st = string.slice(stream.slice, stream.i - 1);
                         if (mem.eql(u8, st, "dataType")) {
                             next_data_type = true;
                             continue;
@@ -106,15 +128,15 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                             continue;
                         }
                     },
-                    .ObjectBegin => {},
-                    .ObjectEnd => {
+                    .object_begin => {},
+                    .object_end => {
                         if (next_compression) {
                             next_compression = false;
                             continue;
                         }
                     },
-                    .ArrayBegin => {},
-                    .ArrayEnd => {
+                    .array_begin => {},
+                    .array_end => {
                         if (next_dimensions) {
                             next_dimensions = false;
                             continue;
@@ -124,52 +146,62 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                             continue;
                         }
                     },
-                    .Number => |num| {
+                    .number => |num| {
                         if (next_dimensions) {
-                            const val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
+                            const val = try fmt.parseInt(u64, num, 10);
                             try dimensions.append(val);
                             continue;
                         }
                         if (next_block_size) {
                             if (next_compression) {
-                                const val = try fmt.parseInt(u32, num.slice(stream.slice, stream.i - 1), 10);
+                                const val = try fmt.parseInt(u32, num, 10);
                                 comp_block_size = val;
                                 next_block_size = false;
                                 continue;
                             } else {
-                                const val = try fmt.parseInt(u64, num.slice(stream.slice, stream.i - 1), 10);
+                                const val = try fmt.parseInt(u64, num, 10);
                                 try block_size.append(val);
                                 continue;
                             }
                         }
                         if (next_level) {
-                            const val = try fmt.parseInt(i32, num.slice(stream.slice, stream.i - 1), 10);
+                            const val = try fmt.parseInt(i32, num, 10);
                             level = val;
                             next_level = false;
                             continue;
                         }
                     },
-                    .True => {
+                    .true => {
                         if (next_zlib) {
                             zlib = true;
                             next_zlib = false;
                             continue;
                         }
                     },
-                    .False => {
+                    .false => {
                         if (next_zlib) {
                             next_zlib = false;
                             continue;
                         }
                     },
-                    .Null => {},
+                    else => {},
                 }
+            } else |err| {
+                return err;
             }
 
             // json.parse does not allow to have optional fields for now
             //
             // var d_attr = try json.parse(DatasetAttributes, &stream, .{ .allocator = allocator, .ignore_unknown_fields = true });
             // defer json.parseFree(DatasetAttributes, d_attr, .{ .allocator = allocator });
+
+            // This does not work for the moment:
+            // /usr/local/zig/lib/std/json/static.zig:107:39: error: cannot dereference non-pointer type 'json.scanner.Reader(4096,[]const u8)'
+            //
+            // const r = json.reader(allocator, attr);
+            // const d_attr = try json.parseFromTokenSource(Self, allocator, r, .{});
+            //
+            // return d_attr;
 
             return Self{
                 .allocator = allocator,
@@ -225,7 +257,7 @@ pub const DataType = enum {
 test "init file" {
     var gpa = heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
 
@@ -245,7 +277,8 @@ test "init file" {
     try expect(da.compression.blockSize == 0);
     try expect(da.compression.level == 0);
     da.deinit();
-    try expect(!gpa.deinit());
+    const check = gpa.deinit();
+    try expect(check != .leak);
 }
 
 test "init buffer" {
@@ -270,5 +303,6 @@ test "init buffer" {
     try expect(da.compression.blockSize == 65536);
     try expect(da.compression.level == 0);
     da.deinit();
-    try expect(!gpa.deinit());
+    const check = gpa.deinit();
+    try expect(check != .leak);
 }

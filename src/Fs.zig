@@ -79,13 +79,13 @@ fn datablockPath(self: Fs, datasetPath: []u8, gridPosition: []i64) ![]u8 {
         const gp_str = try fmt.allocPrint(self.allocator, "{d}", .{gp});
         defer self.allocator.free(gp_str);
         gps[i + 1] = try self.allocator.alloc(u8, gp_str.len);
-        std.mem.copy(u8, gps[i + 1], gp_str);
+        @memcpy(gps[i + 1], gp_str);
     }
 
     const full_path = try path.join(self.allocator, gps);
     defer self.allocator.free(full_path);
     const final_path = try self.allocator.alloc(u8, full_path.len);
-    std.mem.copy(u8, final_path, full_path);
+    @memcpy(final_path, full_path);
     return final_path;
 }
 
@@ -100,7 +100,7 @@ test "init" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     const n5_path = try path.join(allocator, &.{ full_path, "data.n5" });
@@ -109,14 +109,15 @@ test "init" {
     fs.deinit();
     allocator.free(n5_path);
 
-    try std.testing.expect(!gpa.deinit());
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 test "init new folder" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try std.fs.realpath("testdata", &path_buffer);
     const data_path = try path.join(allocator, &.{ full_path, "banana" });
@@ -131,14 +132,15 @@ test "init new folder" {
     allocator.free(n5_path);
     allocator.free(data_path);
 
-    try std.testing.expect(!gpa.deinit());
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 test "read lz4" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
@@ -162,7 +164,9 @@ test "read lz4" {
     d_block.deinit();
     attr.deinit();
     fs.deinit();
-    try std.testing.expect(!gpa.deinit());
+
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 // test "write lz4" {

@@ -1,21 +1,29 @@
 const std = @import("std");
-const IguaN5Builder = @import("src/builder.zig");
 
-pub fn build(b: *std.build.Builder) !void {
-    const mode = b.standardReleaseOptions();
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    var builder = try IguaN5Builder.init(b, ".");
-    defer builder.deinit();
+    const lib = b.addStaticLibrary(.{
+        .name = "igua-n5",
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.addIncludePath(b.path("src/vendor"));
+    lib.addCSourceFile(.{ .file = b.path("src/vendor/lz4.c") });
+    lib.linkLibC();
+    b.installArtifact(lib);
 
-    const lib = b.addStaticLibrary("igua-n5", "iguan5.zig");
-    lib.setBuildMode(mode);
-    builder.link(lib);
-    lib.install();
-
-    var main_tests = b.addTest("iguan5.zig");
-    builder.link(main_tests);
-    main_tests.setBuildMode(mode);
+    var main_tests = b.addTest(.{
+        .root_source_file = b.path("iguan5.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    main_tests.addIncludePath(b.path("src/vendor"));
+    main_tests.addCSourceFile(.{ .file = b.path("src/vendor/lz4.c") });
+    main_tests.linkLibC();
+    const uts = b.addRunArtifact(main_tests);
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&main_tests.step);
+    test_step.dependOn(&uts.step);
 }

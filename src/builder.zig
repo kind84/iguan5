@@ -7,7 +7,7 @@ allocator: std.mem.Allocator,
 src_path: []const u8,
 include_dir: []const u8,
 
-pub fn init(b: *std.build.Builder, basePath: []const u8) !Self {
+pub fn init(b: *std.Build, basePath: []const u8) !Self {
     const src_path = try std.fs.path.join(b.allocator, &[_][]const u8{ basePath, "src/vendor/lz4.c" });
     errdefer b.allocator.free(src_path);
 
@@ -26,7 +26,7 @@ pub fn deinit(self: *Self) void {
     self.allocator.free(self.include_dir);
 }
 
-pub fn link(self: Self, obj: *std.build.LibExeObjStep) void {
+pub fn link(self: Self, obj: *std.Build.LibExeObjStep) void {
     obj.addIncludeDir(self.include_dir);
     obj.addCSourceFile(self.src_path, &.{});
     obj.linkLibC();

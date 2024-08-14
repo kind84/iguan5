@@ -90,7 +90,7 @@ pub fn Datablock(comptime SourceType: type) type {
                 switch (SourceType) {
                     std.fs.File, []const u8 => {},
                     []u8 => {
-                        self.source = array_list.toOwnedSlice();
+                        self.source = array_list.toOwnedSlice() catch unreachable;
                         self.stream = std.io.StreamSource{ .buffer = std.io.fixedBufferStream(self.source.?) };
                     },
                     else => unreachable,
@@ -100,17 +100,19 @@ pub fn Datablock(comptime SourceType: type) type {
             // write the header
             const sizes = self.attributes.?.blockSize;
             const dims = self.attributes.?.dimensions;
-            try w.writeIntBig(u16, @as(u16, self.mode));
+            try w.writeInt(u16, @as(u16, self.mode), .big);
             if (self.mode < 2) {
-                try w.writeIntBig(u16, @as(u16, sizes.len));
+                const sizes_len: u16 = @intCast(sizes.len);
+                try w.writeInt(u16, sizes_len, .big);
                 for (sizes) |s| {
-                    try w.writeIntBig(u32, @as(u32, s));
+                    const s32: u16 = @intCast(s);
+                    try w.writeInt(u32, s32, .big);
                 }
                 if (self.mode == 1) {
-                    try w.writeIntBig(u32, totalElements(u64, dims));
+                    try w.writeInt(u32, totalElements(u64, dims), .big);
                 }
             } else {
-                try w.writeIntBig(u32, totalElements(u64, dims));
+                try w.writeInt(u32, totalElements(u64, dims), .big);
             }
 
             // now the data
@@ -126,20 +128,21 @@ pub fn Datablock(comptime SourceType: type) type {
                     CompressionType.blosc => unreachable,
                     CompressionType.lz4 => {
                         // TODO: use lz4 compress bound func to comput dest size
-                        const dest_size_c = c.LZ4_compressBound(@as(c_int, bytes.len));
-                        const dest_size = @as(usize, dest_size_c);
+                        const bytes_len: c_int = @intCast(bytes.len);
+                        const dest_size_c = c.LZ4_compressBound(bytes_len);
+                        const dest_size: usize = @intCast(dest_size_c);
                         var dest_buf = try self.allocator.alloc(u8, dest_size);
                         defer self.allocator.free(dest_buf);
 
                         const comp_c = c.LZ4_compress_default(
                             bytes.ptr,
                             dest_buf.ptr,
-                            @as(c_int, bytes.len),
+                            @intCast(bytes.len),
                             dest_size_c,
                         );
 
                         // if compression failed use the original length
-                        const comp: i32 = if (comp_c == 0) @as(i32, bytes.len) else @as(i32, comp_c);
+                        const comp: i32 = if (comp_c == 0) @intCast(bytes.len) else @intCast(comp_c);
 
                         // 21 bytes lz4 header:
                         // 9 bytes: magic + token (Lz4Block&)
@@ -149,21 +152,21 @@ pub fn Datablock(comptime SourceType: type) type {
                         //
                         // // TODO: group in a buffer and write once
                         _ = try w.write(&lz4Magic);
-                        _ = try w.writeIntLittle(i32, comp);
-                        _ = try w.writeIntLittle(i32, @as(i32, bytes.len));
-                        _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
+                        _ = try w.writeInt(i32, comp, .little);
+                        _ = try w.writeInt(i32, @intCast(bytes.len), .little);
+                        _ = try w.writeInt(i32, 0x0000, .little); // TODO compute checksum
 
-                        const comp_buf = dest_buf[0..@as(usize, comp)];
+                        const comp_buf = dest_buf[0..@intCast(comp)];
 
                         _ = try w.write(comp_buf);
 
                         // signal end of lz4 block
                         _ = try w.write(&lz4Magic);
-                        _ = try w.writeIntLittle(i32, comp);
-                        _ = try w.writeIntLittle(i32, 0x0000);
-                        _ = try w.writeIntLittle(i32, 0x0000); // TODO compute checksum
+                        _ = try w.writeInt(i32, comp, .little);
+                        _ = try w.writeInt(i32, 0x0000, .little);
+                        _ = try w.writeInt(i32, 0x0000, .little); // TODO compute checksum
 
-                        const compr_len = @as(usize, comp);
+                        const compr_len: usize = @intCast(comp);
                         if (compr_len <= bytes.len) {
                             self.len = compr_len;
                         } else {
@@ -190,8 +193,9 @@ pub fn Datablock(comptime SourceType: type) type {
                         return self.stream.read(buffer);
                     },
                     CompressionType.gzip => {
-                        var gzip_reader = try gzip.gzipStream(self.allocator, self.stream.reader());
-                        return gzip_reader.read(buffer);
+                        var w = std.io.fixedBufferStream(buffer);
+                        try gzip.decompress(self.stream.reader(), w.writer());
+                        return 0; // FIXME
                     },
                     CompressionType.bzip2 => unreachable,
                     CompressionType.blosc => unreachable,
@@ -210,15 +214,15 @@ pub fn Datablock(comptime SourceType: type) type {
                             // compressedLength(4 bytes)
                             // decompressedLength(4 bytes)
                             // checksum 4 bytes
-                            const comp_size = try r.readIntLittle(i32);
-                            const decomp_size = try r.readIntLittle(i32);
-                            // var checksum = try r.readIntLittle(i32);
+                            const comp_size = try r.readInt(i32, .little);
+                            const decomp_size = try r.readInt(i32, .little);
+                            // var checksum = try r.readInt(i32, .little);
                             try s.seekBy(4);
                             if (decomp_size == 0) {
                                 break;
                             }
 
-                            const comp_buf = try self.allocator.alloc(u8, @as(usize, comp_size));
+                            const comp_buf = try self.allocator.alloc(u8, @intCast(comp_size));
                             defer self.allocator.free(comp_buf);
                             _ = try r.read(comp_buf);
 
@@ -233,9 +237,9 @@ pub fn Datablock(comptime SourceType: type) type {
                                 return error.LZ4DecompressionError;
                             }
                             decompressed += res;
-                            current_byte += @as(usize, decomp_size);
+                            current_byte += @intCast(decomp_size);
                         }
-                        return @as(usize, decompressed);
+                        return @intCast(decompressed);
                     },
                     CompressionType.xz => unreachable,
                 }
@@ -290,7 +294,7 @@ pub fn Datablock(comptime SourceType: type) type {
             }
 
             var r = self.stream.reader();
-            const mode = try r.readIntBig(u16);
+            const mode = try r.readInt(u16, .big);
             var block_size: []u32 = undefined;
             var elements_no: u32 = undefined;
 
@@ -307,12 +311,12 @@ pub fn Datablock(comptime SourceType: type) type {
             //      repository, but from the java implementation we can see that this mode is
             //      used for data of type OBJECT.
             if (mode < 2) {
-                const dim_no = try r.readIntBig(u16);
+                const dim_no = try r.readInt(u16, .big);
 
                 block_size = try self.allocator.alloc(u32, dim_no);
                 var i: u16 = 0;
                 while (i < dim_no) : (i += 1) {
-                    const dim_size = try r.readIntBig(u32);
+                    const dim_size = try r.readInt(u32, .big);
                     block_size[i] = dim_size;
                 }
 
@@ -320,11 +324,11 @@ pub fn Datablock(comptime SourceType: type) type {
                     elements_no = totalElements(u32, block_size);
                 } else {
                     // mode == 1
-                    elements_no = try r.readIntBig(u32);
+                    elements_no = try r.readInt(u32, .big);
                 }
             } else {
                 // mode == 2
-                elements_no = try r.readIntBig(u32);
+                elements_no = try r.readInt(u32, .big);
             }
 
             var len: u32 = 1;
@@ -345,7 +349,7 @@ test "raw file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try std.fs.realpath("testdata/lynx_raw", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
@@ -374,14 +378,16 @@ test "raw file" {
     fs.deinit();
     try std.fs.deleteFileAbsolute(fs_path);
     allocator.free(fs_path);
-    try std.testing.expect(!gpa.deinit());
+
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 test "LZ4 file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    const buff_size = util.pathBufferSize();
+    const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try std.fs.realpath("testdata/lynx_lz4", &path_buffer);
     var fs = try Fs.init(allocator, full_path);
@@ -410,7 +416,9 @@ test "LZ4 file" {
     fs.deinit();
     try std.fs.deleteFileAbsolute(fs_path);
     allocator.free(fs_path);
-    try std.testing.expect(!gpa.deinit());
+
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 test "raw bytes" {
@@ -433,7 +441,9 @@ test "raw bytes" {
     allocator.free(out_buf);
     d_block.deinit();
     d_attr.deinit();
-    try std.testing.expect(!gpa.deinit());
+
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 test "LZ4 bytes" {
@@ -457,14 +467,16 @@ test "LZ4 bytes" {
     allocator.free(out_buf);
     d_block.deinit();
     d_attr.deinit();
-    try std.testing.expect(!gpa.deinit());
+
+    const check = gpa.deinit();
+    try std.testing.expect(check != .leak);
 }
 
 fn totalElements(comptime T: type, dimensions: []T) u32 {
     if (dimensions.len == 0) return 0;
     var n: u32 = 1;
     for (dimensions) |d| {
-        n *= @as(u32, d);
+        n *= @intCast(d);
     }
     return n;
 }

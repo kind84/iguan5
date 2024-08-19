@@ -20,7 +20,7 @@ pub fn init(allocator: Allocator, basePath: []const u8) !Fs {
     const data_path = try path.join(allocator, &.{ basePath, "data.n5" });
     errdefer allocator.free(data_path);
     // Catch the error here if dir does not exist and create it.
-    // It means that the Fs in used for writing.
+    // It means that the Fs is used for writing.
     var dir: std.fs.Dir = undefined;
     dir = std.fs.openDirAbsolute(data_path, .{}) catch |err| blk: {
         if (err == std.fs.Dir.OpenError.FileNotFound) {

@@ -46,7 +46,8 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                 else => unreachable,
             }
 
-            var stream = json.Scanner.initCompleteInput(allocator, str);
+            var scanner = json.Scanner.initCompleteInput(allocator, str);
+            defer scanner.deinit();
 
             var next_data_type = false;
             var next_compression = false;
@@ -63,7 +64,7 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
             var level: i32 = 0;
             var zlib = false;
 
-            while (stream.next()) |token| {
+            while (scanner.next()) |token| {
                 switch (token) {
                     // object_begin,
                     // object_end,
@@ -184,6 +185,7 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                             continue;
                         }
                     },
+                    .end_of_document => break,
                     else => {},
                 }
             } else |err| {
@@ -212,8 +214,8 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
                     .level = level,
                     .blockSize = comp_block_size,
                 },
-                .dimensions = dimensions.toOwnedSlice(),
-                .blockSize = block_size.toOwnedSlice(),
+                .dimensions = try dimensions.toOwnedSlice(),
+                .blockSize = try block_size.toOwnedSlice(),
             };
         }
 

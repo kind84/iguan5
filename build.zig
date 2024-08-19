@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const lib = b.addStaticLibrary(.{
-        .name = "igua-n5",
+        .name = "iguan5",
         .target = target,
         .optimize = optimize,
     });

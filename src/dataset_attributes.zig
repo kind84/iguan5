@@ -257,8 +257,7 @@ pub const DataType = enum {
 };
 
 test "init file" {
-    var gpa = heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
     const full_path = try fs.realpath("testdata/lynx_raw/data.n5/0/0", &path_buffer);
@@ -279,15 +278,12 @@ test "init file" {
     try expect(da.compression.blockSize == 0);
     try expect(da.compression.level == 0);
     da.deinit();
-    const check = gpa.deinit();
-    try expect(check != .leak);
 }
 
 test "init buffer" {
     const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
-    var gpa = heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     var da = try DatasetAttributes([]const u8).init(allocator, attr);
 
@@ -305,6 +301,4 @@ test "init buffer" {
     try expect(da.compression.blockSize == 65536);
     try expect(da.compression.level == 0);
     da.deinit();
-    const check = gpa.deinit();
-    try expect(check != .leak);
 }

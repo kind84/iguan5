@@ -346,8 +346,7 @@ pub fn Datablock(comptime SourceType: type) type {
 }
 
 test "raw file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -378,14 +377,10 @@ test "raw file" {
     fs.deinit();
     try std.fs.deleteFileAbsolute(fs_path);
     allocator.free(fs_path);
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 test "LZ4 file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -416,16 +411,12 @@ test "LZ4 file" {
     fs.deinit();
     try std.fs.deleteFileAbsolute(fs_path);
     allocator.free(fs_path);
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 test "raw bytes" {
     const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"raw\"},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    var allocator = std.testing.allocator;
 
     var d_attr = try DatasetAttributes([]u8).init(allocator, attr);
     var d_block = try Datablock([]u8).init(allocator, null, &.{}, &.{}, d_attr);
@@ -441,16 +432,12 @@ test "raw bytes" {
     allocator.free(out_buf);
     d_block.deinit();
     d_attr.deinit();
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 test "LZ4 bytes" {
     const attr = "{\"dataType\":\"uint8\",\"compression\":{\"type\":\"lz4\",\"blockSize\":65536},\"blockSize\":[512,512,1,1,1],\"dimensions\":[1920,1080,3,1,1]}";
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    var allocator = std.testing.allocator;
 
     var d_attr = try DatasetAttributes([]u8).init(allocator, attr);
     var d_block = try Datablock([]u8).init(allocator, null, &.{}, &.{}, d_attr);
@@ -461,15 +448,12 @@ test "LZ4 bytes" {
     const out_buf = try allocator.alloc(u8, d_block.len);
     try d_block.initChunk();
     _ = try d_block.reader().read(out_buf);
-    std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(out_buf)});
+    // std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(out_buf)});
     try std.testing.expect(std.mem.eql(u8, out_buf, deadbeef));
 
     allocator.free(out_buf);
     d_block.deinit();
     d_attr.deinit();
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 fn totalElements(comptime T: type, dimensions: []T) u32 {

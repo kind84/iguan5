@@ -97,8 +97,7 @@ pub fn datasetAttributes(self: Fs, datasetPath: []const u8) !DatasetAttributes(s
 }
 
 test "init" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -108,14 +107,10 @@ test "init" {
     _ = try std.fs.openDirAbsolute(n5_path, .{});
     fs.deinit();
     allocator.free(n5_path);
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 test "init new folder" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -131,14 +126,10 @@ test "init new folder" {
     try dir.deleteTree(data_path);
     allocator.free(n5_path);
     allocator.free(data_path);
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 test "read lz4" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = std.testing.allocator;
 
     const buff_size = comptime util.pathBufferSize();
     var path_buffer: [buff_size]u8 = undefined;
@@ -153,20 +144,14 @@ test "read lz4" {
 
     var d_block = try fs.getBlock("0/0", &grid_position, attr);
     errdefer d_block.deinit();
-    var out = std.io.getStdOut();
     const buf = try allocator.alloc(u8, d_block.len);
     errdefer allocator.free(buf);
     _ = try d_block.reader().read(buf);
-    try out.writeAll(buf);
-    std.debug.print("\n", .{});
 
     allocator.free(buf);
     d_block.deinit();
     attr.deinit();
     fs.deinit();
-
-    const check = gpa.deinit();
-    try std.testing.expect(check != .leak);
 }
 
 // test "write lz4" {

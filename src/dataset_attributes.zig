@@ -66,28 +66,6 @@ pub fn DatasetAttributes(comptime AttributesType: type) type {
 
             while (scanner.next()) |token| {
                 switch (token) {
-                    // object_begin,
-                    // object_end,
-                    // array_begin,
-                    // array_end,
-
-                    // true,
-                    // false,
-                    // null,
-
-                    // number: []const u8,
-                    // partial_number: []const u8,
-                    // allocated_number: []u8,
-
-                    // string: []const u8,
-                    // partial_string: []const u8,
-                    // partial_string_escaped_1: [1]u8,
-                    // partial_string_escaped_2: [2]u8,
-                    // partial_string_escaped_3: [3]u8,
-                    // partial_string_escaped_4: [4]u8,
-                    // allocated_string: []u8,
-
-                    // end_of_document,
                     .string => |st| {
                         // const st = string.slice(stream.slice, stream.i - 1);
                         if (mem.eql(u8, st, "dataType")) {
